@@ -1,17 +1,19 @@
-# Node.js is needed to build Angular applications
-FROM node:18-alpine
+# Stage 1: Build the Angular application
+FROM node:18-alpine AS builder
 
-# Setting the working directory inside the container
 WORKDIR /app
 
 # Build-time argument for REST_API_URL
 ARG REST_API_URL=http://localhost:9966/petclinic/api/
 
-# Copy everything from the current directory into the container
-COPY . .
+# Copy package files first for better layer caching
+COPY package*.json ./
 
-# npm install downloads all the libraries and tools needed to build the app
+# Install dependencies
 RUN npm install
+
+# Copy the rest of the application
+COPY . .
 
 # Replace the REST_API_URL in environment.ts with the build argument
 RUN sed -i "s|REST_API_URL: '.*'|REST_API_URL: '${REST_API_URL}'|g" src/environments/environment.ts
@@ -19,9 +21,17 @@ RUN sed -i "s|REST_API_URL: '.*'|REST_API_URL: '${REST_API_URL}'|g" src/environm
 # Build the Angular application for production
 RUN npm run build
 
-# The frontend web server runs on port 4200
-EXPOSE 4200
+# Stage 2: Serve with Nginx
+FROM nginx:alpine
 
-# Start the Angular development server
-# --host 0.0.0.0 allows connections from outside the container
-CMD ["npm", "start", "--", "--host", "0.0.0.0"]
+# Copy the built Angular app from the builder stage
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Copy custom nginx configuration (commented for now, might be useful later)
+# COPY nginx.conf /etc/nginx/nginx.conf
+
+# Expose port 80
+EXPOSE 80
+
+# Start Nginx server
+CMD ["nginx", "-g", "daemon off;"]
